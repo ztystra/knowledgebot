@@ -3,8 +3,8 @@ RAG Engine — Retrieval-Augmented Generation для KnowledgeBot.
 ChromaDB для хранения эмбеддингов + DeepSeek/Groq API для генерации ответов.
 """
 
-import os
 import hashlib
+import os
 from pathlib import Path
 
 import chromadb

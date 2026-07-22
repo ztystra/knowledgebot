@@ -1,16 +1,11 @@
-import os
 import logging
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-)
+from telegram import KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram.ext import (Application, CommandHandler, ContextTypes,
+                          MessageHandler, filters)
 
 from rag_engine import RAGEngine
 
