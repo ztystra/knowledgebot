@@ -4,10 +4,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler,
-    filters, ContextTypes
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 from rag_engine import RAGEngine
 
@@ -16,8 +13,7 @@ load_dotenv()
 
 # Logging
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -31,7 +27,7 @@ main_keyboard = ReplyKeyboardMarkup(
         [KeyboardButton("❓ Задать вопрос"), KeyboardButton("📋 Список документов")],
         [KeyboardButton("🗑 Очистить базу"), KeyboardButton("ℹ️ Помощь")],
     ],
-    resize_keyboard=True
+    resize_keyboard=True,
 )
 
 
@@ -43,7 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📚 Загрузите PDF или текстовый файл\n"
         "❓ Задайте вопрос по содержимому\n\n"
         "Используйте кнопки меню для навигации.",
-        reply_markup=main_keyboard
+        reply_markup=main_keyboard,
     )
 
 
@@ -59,7 +55,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help — Помощь\n"
         "/list — Список загруженных документов\n"
         "/clear — Очистить базу знаний",
-        reply_markup=main_keyboard
+        reply_markup=main_keyboard,
     )
 
 
@@ -68,8 +64,7 @@ async def list_documents(update: Update, context: ContextTypes.DEFAULT_TYPE):
     docs = rag.list_documents()
     if not docs:
         await update.message.reply_text(
-            "📭 База знаний пуста. Загрузите документ!",
-            reply_markup=main_keyboard
+            "📭 База знаний пуста. Загрузите документ!", reply_markup=main_keyboard
         )
         return
 
@@ -83,10 +78,7 @@ async def list_documents(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Очистить базу."""
     rag.clear()
-    await update.message.reply_text(
-        "🗑 База знаний очищена!",
-        reply_markup=main_keyboard
-    )
+    await update.message.reply_text("🗑 База знаний очищена!", reply_markup=main_keyboard)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -98,9 +90,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     file_ext = Path(document.file_name).suffix.lower()
     if file_ext not in [".pdf", ".txt"]:
-        await update.message.reply_text(
-            "❌ Поддерживаются только PDF и TXT файлы."
-        )
+        await update.message.reply_text("❌ Поддерживаются только PDF и TXT файлы.")
         return
 
     if document.file_size > 20 * 1024 * 1024:
@@ -124,13 +114,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• Фрагментов: {result['chunks']}\n"
             f"• Символов: {result['characters']}\n\n"
             f"Теперь задавайте вопросы по содержимому!",
-            reply_markup=main_keyboard
+            reply_markup=main_keyboard,
         )
     except Exception as e:
         logger.error(f"Error processing document: {e}")
         await update.message.reply_text(
             f"❌ Ошибка при обработке: {str(e)}\n\nПопробуйте другой файл.",
-            reply_markup=main_keyboard
+            reply_markup=main_keyboard,
         )
 
 
@@ -141,8 +131,7 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     docs = rag.list_documents()
     if not docs:
         await update.message.reply_text(
-            "📭 База знаний пуста! Сначала загрузите документ.",
-            reply_markup=main_keyboard
+            "📭 База знаний пуста! Сначала загрузите документ.", reply_markup=main_keyboard
         )
         return
 
@@ -163,7 +152,7 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error querying RAG: {e}")
         await update.message.reply_text(
             f"❌ Ошибка: {str(e)}\n\nПопробуйте переформулировать вопрос.",
-            reply_markup=main_keyboard
+            reply_markup=main_keyboard,
         )
 
 
@@ -182,9 +171,7 @@ def main():
     application.add_handler(CommandHandler("list", list_documents))
     application.add_handler(CommandHandler("clear", clear_database))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_question)
-    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_question))
 
     logger.info("🤖 KnowledgeBot started!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -20,27 +20,27 @@ class RAGEngine:
         # ChromaDB — persistent storage
         self.db_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
         self.client = chromadb.PersistentClient(
-            path=self.db_path,
-            settings=Settings(anonymized_telemetry=False)
+            path=self.db_path, settings=Settings(anonymized_telemetry=False)
         )
         self.collection = self.client.get_or_create_collection(
-            name="knowledge",
-            metadata={"hnsw:space": "cosine"}
+            name="knowledge", metadata={"hnsw:space": "cosine"}
         )
 
         # DeepSeek API (primary)
         self.deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
-        self.deepseek_client = OpenAI(
-            api_key=self.deepseek_key,
-            base_url="https://api.deepseek.com"
-        ) if self.deepseek_key else None
+        self.deepseek_client = (
+            OpenAI(api_key=self.deepseek_key, base_url="https://api.deepseek.com")
+            if self.deepseek_key
+            else None
+        )
 
         # Groq API (free fallback)
         self.groq_key = os.getenv("GROQ_API_KEY", "")
-        self.groq_client = OpenAI(
-            api_key=self.groq_key,
-            base_url="https://api.groq.com/openai/v1"
-        ) if self.groq_key else None
+        self.groq_client = (
+            OpenAI(api_key=self.groq_key, base_url="https://api.groq.com/openai/v1")
+            if self.groq_key
+            else None
+        )
 
         # Models
         self.deepseek_model = os.getenv("LLM_MODEL", "deepseek-chat")
@@ -52,7 +52,7 @@ class RAGEngine:
             "Ты helpful ассистент. Отвечай на основе загруженных документов. "
             "Если в документах нет информации для ответа — скажи честно, "
             "что не нашёл релевантной информации. Отвечай на том языке, "
-            "на котором задан вопрос."
+            "на котором задан вопрос.",
         )
 
     def add_document(self, file_path: str, filename: str) -> dict:
@@ -78,53 +78,33 @@ class RAGEngine:
         # Добавить в ChromaDB
         ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
         metadatas = [
-            {
-                "document": filename,
-                "doc_id": doc_id,
-                "chunk_index": i,
-                "total_chunks": len(chunks)
-            }
+            {"document": filename, "doc_id": doc_id, "chunk_index": i, "total_chunks": len(chunks)}
             for i in range(len(chunks))
         ]
 
-        self.collection.add(
-            ids=ids,
-            documents=chunks,
-            metadatas=metadatas
-        )
+        self.collection.add(ids=ids, documents=chunks, metadatas=metadatas)
 
-        return {
-            "chunks": len(chunks),
-            "characters": len(text),
-            "doc_id": doc_id
-        }
+        return {"chunks": len(chunks), "characters": len(text), "doc_id": doc_id}
 
     def query(self, question: str, top_k: int = 5) -> dict:
         """Задать вопрос и получить ответ на основе документов."""
         # Найти релевантные фрагменты
         results = self.collection.query(
-            query_texts=[question],
-            n_results=min(top_k, self.collection.count() or 1)
+            query_texts=[question], n_results=min(top_k, self.collection.count() or 1)
         )
 
         if not results["documents"][0]:
             return {
                 "answer": "📭 База знаний пуста. Загрузите документ для начала работы.",
-                "sources": []
+                "sources": [],
             }
 
         # Собрать контекст
         context_parts = []
         sources = []
-        for i, (doc, meta) in enumerate(zip(
-            results["documents"][0],
-            results["metadatas"][0]
-        )):
+        for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0])):
             context_parts.append(f"[Фрагмент {i+1}] {doc}")
-            sources.append({
-                "document": meta.get("document", "unknown"),
-                "preview": doc[:100]
-            })
+            sources.append({"document": meta.get("document", "unknown"), "preview": doc[:100]})
 
         context = "\n\n".join(context_parts)
 
@@ -137,8 +117,8 @@ class RAGEngine:
                     f"---\nВопрос: {question}\n\n"
                     "Ответь на основе приведённого контекста. "
                     "Если контекста недостаточно — скажи об этом."
-                )
-            }
+                ),
+            },
         ]
 
         # Пробуем DeepSeek, потом Groq
@@ -147,10 +127,7 @@ class RAGEngine:
         if self.deepseek_client:
             try:
                 response = self.deepseek_client.chat.completions.create(
-                    model=self.deepseek_model,
-                    messages=messages,
-                    temperature=0.3,
-                    max_tokens=1500
+                    model=self.deepseek_model, messages=messages, temperature=0.3, max_tokens=1500
                 )
                 answer = response.choices[0].message.content
             except Exception as e:
@@ -159,25 +136,16 @@ class RAGEngine:
         if not answer and self.groq_client:
             try:
                 response = self.groq_client.chat.completions.create(
-                    model=self.groq_model,
-                    messages=messages,
-                    temperature=0.3,
-                    max_tokens=1500
+                    model=self.groq_model, messages=messages, temperature=0.3, max_tokens=1500
                 )
                 answer = response.choices[0].message.content
             except Exception as e:
                 print(f"⚠️ Groq failed: {e}")
 
         if not answer:
-            answer = (
-                "❌ Не удалось получить ответ. "
-                "Проверьте API ключи DeepSeek или Groq."
-            )
+            answer = "❌ Не удалось получить ответ. " "Проверьте API ключи DeepSeek или Groq."
 
-        return {
-            "answer": answer,
-            "sources": sources
-        }
+        return {"answer": answer, "sources": sources}
 
     def list_documents(self) -> list:
         """Список загруженных документов."""
@@ -192,17 +160,13 @@ class RAGEngine:
                 docs[doc_name] = 0
             docs[doc_name] += 1
 
-        return [
-            {"name": name, "chunks": count}
-            for name, count in docs.items()
-        ]
+        return [{"name": name, "chunks": count} for name, count in docs.items()]
 
     def clear(self):
         """Очистить базу знаний."""
         self.client.delete_collection("knowledge")
         self.collection = self.client.get_or_create_collection(
-            name="knowledge",
-            metadata={"hnsw:space": "cosine"}
+            name="knowledge", metadata={"hnsw:space": "cosine"}
         )
 
     def _extract_pdf(self, file_path: Path) -> str:
@@ -215,12 +179,7 @@ class RAGEngine:
                 text_parts.append(page_text)
         return "\n\n".join(text_parts)
 
-    def _split_text(
-        self,
-        text: str,
-        chunk_size: int = 1000,
-        overlap: int = 200
-    ) -> list[str]:
+    def _split_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
         """Разбить текст на перекрывающиеся чанки."""
         chunks = []
         start = 0
