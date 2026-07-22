@@ -1,5 +1,11 @@
+"""KnowledgeBot — AI-ассистент по документам.
+
+Каждый пользователь имеет изолированную базу знаний.
+"""
+
 import logging
 import os
+import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -36,6 +42,9 @@ main_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+# Состояния пользователей (ожидание вопроса)
+user_states = {}
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Приветствие."""
@@ -67,7 +76,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def list_documents(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Список документов."""
-    docs = rag.list_documents()
+    user_id = update.effective_user.id
+    docs = rag.list_documents(user_id)
     if not docs:
         await update.message.reply_text(
             "📭 База знаний пуста. Загрузите документ!", reply_markup=main_keyboard
@@ -82,10 +92,20 @@ async def list_documents(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def clear_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Очистить базу."""
-    rag.clear()
+    """Очистить базу (только свою)."""
+    user_id = update.effective_user.id
+
+    docs = rag.list_documents(user_id)
+    if not docs:
+        await update.message.reply_text(
+            "📭 База знаний уже пуста!", reply_markup=main_keyboard
+        )
+        return
+
+    rag.clear(user_id)
     await update.message.reply_text(
-        "🗑 База знаний очищена!", reply_markup=main_keyboard
+        "🗑 База знаний очищена!\n" f"Удалено документов: {len(docs)}",
+        reply_markup=main_keyboard,
     )
 
 
@@ -96,11 +116,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Отправьте PDF или TXT файл.")
         return
 
+    user_id = update.effective_user.id
+
+    # Проверяем формат
     file_ext = Path(document.file_name).suffix.lower()
     if file_ext not in [".pdf", ".txt"]:
         await update.message.reply_text("❌ Поддерживаются только PDF и TXT файлы.")
         return
 
+    # Проверяем размер
     if document.file_size > 20 * 1024 * 1024:
         await update.message.reply_text("❌ Файл слишком большой (максимум 20MB).")
         return
@@ -109,15 +133,19 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         file = await context.bot.get_file(document.file_id)
-        temp_path = f"/tmp/{document.file_name}"
+
+        # Безопасное имя файла (fix path traversal)
+        safe_filename = rag._sanitize_filename(document.file_name)
+        temp_path = os.path.join(tempfile.gettempdir(), safe_filename)
+
         await file.download_to_drive(temp_path)
 
-        result = rag.add_document(temp_path, document.file_name)
+        result = rag.add_document(temp_path, safe_filename, user_id)
 
         os.remove(temp_path)
 
         await update.message.reply_text(
-            f"✅ Документ «{document.file_name}» загружен!\n\n"
+            f"✅ Документ «{safe_filename}» загружен!\n\n"
             f"📊 Статистика:\n"
             f"• Фрагментов: {result['chunks']}\n"
             f"• Символов: {result['characters']}\n\n"
@@ -134,9 +162,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка вопросов."""
+    user_id = update.effective_user.id
     question = update.message.text
 
-    docs = rag.list_documents()
+    docs = rag.list_documents(user_id)
     if not docs:
         await update.message.reply_text(
             "📭 База знаний пуста! Сначала загрузите документ.",
@@ -147,7 +176,7 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤔 Думаю...")
 
     try:
-        result = rag.query(question)
+        result = rag.query(question, user_id)
 
         response = f"💡 Ответ:\n\n{result['answer']}\n"
 

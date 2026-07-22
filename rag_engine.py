@@ -1,10 +1,14 @@
 """
 RAG Engine — Retrieval-Augmented Generation для KnowledgeBot.
 ChromaDB для хранения эмбеддингов + DeepSeek/Groq API для генерации ответов.
+
+Изоляция: каждый пользователь имеет свою коллекцию ChromaDB.
 """
 
 import hashlib
 import os
+import re
+import tempfile
 from pathlib import Path
 
 import chromadb
@@ -21,9 +25,6 @@ class RAGEngine:
         self.db_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
         self.client = chromadb.PersistentClient(
             path=self.db_path, settings=Settings(anonymized_telemetry=False)
-        )
-        self.collection = self.client.get_or_create_collection(
-            name="knowledge", metadata={"hnsw:space": "cosine"}
         )
 
         # DeepSeek API (primary)
@@ -55,8 +56,27 @@ class RAGEngine:
             "на котором задан вопрос.",
         )
 
-    def add_document(self, file_path: str, filename: str) -> dict:
-        """Загрузить документ в базу знаний."""
+    def _get_user_collection(self, user_id: int):
+        """Получить коллекцию для конкретного пользователя."""
+        collection_name = f"user_{user_id}"
+        return self.client.get_or_create_collection(
+            name=collection_name, metadata={"hnsw:space": "cosine"}
+        )
+
+    def _sanitize_filename(self, filename: str) -> str:
+        """Очистить имя файла от path traversal и спецсимволов."""
+        # Убираем path components (только имя файла)
+        filename = Path(filename).name
+        # Оставляем только безопасные символы
+        filename = re.sub(r"[^\w\-.]", "_", filename)
+        # Ограничиваем длину
+        if len(filename) > 100:
+            ext = Path(filename).suffix
+            filename = filename[: 100 - len(ext)] + ext
+        return filename
+
+    def add_document(self, file_path: str, filename: str, user_id: int) -> dict:
+        """Загрузить документ в базу знаний пользователя."""
         file_path = Path(file_path)
 
         if file_path.suffix.lower() == ".pdf":
@@ -73,34 +93,44 @@ class RAGEngine:
         chunks = self._split_text(text, chunk_size=1000, overlap=200)
 
         # Сгенерировать ID для документа
-        doc_id = hashlib.md5(filename.encode()).hexdigest()[:12]
+        doc_id = hashlib.md5(f"{user_id}_{filename}".encode()).hexdigest()[:12]
 
-        # Добавить в ChromaDB
+        # Добавить в коллекцию пользователя
+        collection = self._get_user_collection(user_id)
         ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
         metadatas = [
             {
                 "document": filename,
                 "doc_id": doc_id,
+                "user_id": user_id,
                 "chunk_index": i,
                 "total_chunks": len(chunks),
             }
             for i in range(len(chunks))
         ]
 
-        self.collection.add(ids=ids, documents=chunks, metadatas=metadatas)
+        collection.add(ids=ids, documents=chunks, metadatas=metadatas)
 
         return {"chunks": len(chunks), "characters": len(text), "doc_id": doc_id}
 
-    def query(self, question: str, top_k: int = 5) -> dict:
-        """Задать вопрос и получить ответ на основе документов."""
+    def query(self, question: str, user_id: int, top_k: int = 5) -> dict:
+        """Задать вопрос и получить ответ на основе документов пользователя."""
+        collection = self._get_user_collection(user_id)
+
+        if collection.count() == 0:
+            return {
+                "answer": "📭 База знаний пуста. Загрузите документ для начала работы.",
+                "sources": [],
+            }
+
         # Найти релевантные фрагменты
-        results = self.collection.query(
-            query_texts=[question], n_results=min(top_k, self.collection.count() or 1)
+        results = collection.query(
+            query_texts=[question], n_results=min(top_k, collection.count())
         )
 
         if not results["documents"][0]:
             return {
-                "answer": "📭 База знаний пуста. Загрузите документ для начала работы.",
+                "answer": "📭 Не удалось найти релевантную информацию.",
                 "sources": [],
             }
 
@@ -165,12 +195,14 @@ class RAGEngine:
 
         return {"answer": answer, "sources": sources}
 
-    def list_documents(self) -> list:
-        """Список загруженных документов."""
-        if self.collection.count() == 0:
+    def list_documents(self, user_id: int) -> list:
+        """Список загруженных документов пользователя."""
+        collection = self._get_user_collection(user_id)
+
+        if collection.count() == 0:
             return []
 
-        all_data = self.collection.get(include=["metadatas"])
+        all_data = collection.get(include=["metadatas"])
         docs = {}
         for meta in all_data["metadatas"]:
             doc_name = meta.get("document", "unknown")
@@ -180,12 +212,24 @@ class RAGEngine:
 
         return [{"name": name, "chunks": count} for name, count in docs.items()]
 
-    def clear(self):
-        """Очистить базу знаний."""
-        self.client.delete_collection("knowledge")
-        self.collection = self.client.get_or_create_collection(
-            name="knowledge", metadata={"hnsw:space": "cosine"}
-        )
+    def clear(self, user_id: int):
+        """Очистить базу знаний пользователя."""
+        collection_name = f"user_{user_id}"
+        try:
+            self.client.delete_collection(collection_name)
+        except ValueError:
+            pass  # Коллекция не существует
+
+    def get_owner_id(self, user_id: int) -> int | None:
+        """Получить ID владельца коллекции (первый загрузивший документ)."""
+        collection = self._get_user_collection(user_id)
+        if collection.count() == 0:
+            return None
+
+        all_data = collection.get(include=["metadatas"], limit=1)
+        if all_data["metadatas"]:
+            return all_data["metadatas"][0].get("user_id")
+        return None
 
     def _extract_pdf(self, file_path: Path) -> str:
         """Извлечь текст из PDF."""
