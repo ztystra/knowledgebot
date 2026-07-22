@@ -4,7 +4,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 
 from rag_engine import RAGEngine
 
@@ -78,7 +84,9 @@ async def list_documents(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Очистить базу."""
     rag.clear()
-    await update.message.reply_text("🗑 База знаний очищена!", reply_markup=main_keyboard)
+    await update.message.reply_text(
+        "🗑 База знаний очищена!", reply_markup=main_keyboard
+    )
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,7 +139,8 @@ async def handle_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     docs = rag.list_documents()
     if not docs:
         await update.message.reply_text(
-            "📭 База знаний пуста! Сначала загрузите документ.", reply_markup=main_keyboard
+            "📭 База знаний пуста! Сначала загрузите документ.",
+            reply_markup=main_keyboard,
         )
         return
 
@@ -171,7 +180,9 @@ def main():
     application.add_handler(CommandHandler("list", list_documents))
     application.add_handler(CommandHandler("clear", clear_database))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_question))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_question)
+    )
 
     logger.info("🤖 KnowledgeBot started!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)

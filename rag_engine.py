@@ -78,7 +78,12 @@ class RAGEngine:
         # Добавить в ChromaDB
         ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
         metadatas = [
-            {"document": filename, "doc_id": doc_id, "chunk_index": i, "total_chunks": len(chunks)}
+            {
+                "document": filename,
+                "doc_id": doc_id,
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+            }
             for i in range(len(chunks))
         ]
 
@@ -102,9 +107,13 @@ class RAGEngine:
         # Собрать контекст
         context_parts = []
         sources = []
-        for i, (doc, meta) in enumerate(zip(results["documents"][0], results["metadatas"][0])):
+        for i, (doc, meta) in enumerate(
+            zip(results["documents"][0], results["metadatas"][0])
+        ):
             context_parts.append(f"[Фрагмент {i+1}] {doc}")
-            sources.append({"document": meta.get("document", "unknown"), "preview": doc[:100]})
+            sources.append(
+                {"document": meta.get("document", "unknown"), "preview": doc[:100]}
+            )
 
         context = "\n\n".join(context_parts)
 
@@ -127,7 +136,10 @@ class RAGEngine:
         if self.deepseek_client:
             try:
                 response = self.deepseek_client.chat.completions.create(
-                    model=self.deepseek_model, messages=messages, temperature=0.3, max_tokens=1500
+                    model=self.deepseek_model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=1500,
                 )
                 answer = response.choices[0].message.content
             except Exception as e:
@@ -136,14 +148,20 @@ class RAGEngine:
         if not answer and self.groq_client:
             try:
                 response = self.groq_client.chat.completions.create(
-                    model=self.groq_model, messages=messages, temperature=0.3, max_tokens=1500
+                    model=self.groq_model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=1500,
                 )
                 answer = response.choices[0].message.content
             except Exception as e:
                 print(f"⚠️ Groq failed: {e}")
 
         if not answer:
-            answer = "❌ Не удалось получить ответ. " "Проверьте API ключи DeepSeek или Groq."
+            answer = (
+                "❌ Не удалось получить ответ. "
+                "Проверьте API ключи DeepSeek или Groq."
+            )
 
         return {"answer": answer, "sources": sources}
 
@@ -179,7 +197,9 @@ class RAGEngine:
                 text_parts.append(page_text)
         return "\n\n".join(text_parts)
 
-    def _split_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
+    def _split_text(
+        self, text: str, chunk_size: int = 1000, overlap: int = 200
+    ) -> list[str]:
         """Разбить текст на перекрывающиеся чанки."""
         chunks = []
         start = 0
