@@ -8,7 +8,6 @@ ChromaDB для хранения эмбеддингов + DeepSeek/Groq API дл
 import hashlib
 import os
 import re
-import tempfile
 from pathlib import Path
 
 import chromadb
