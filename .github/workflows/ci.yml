@@ -30,7 +30,7 @@ jobs:
         run: black --check bot.py rag_engine.py
       
       - name: Check imports
-        run: isort --check-only bot.py rag_engine.py
+        run: isort --profile black --check-only bot.py rag_engine.py
 
   docker:
     runs-on: ubuntu-latest
