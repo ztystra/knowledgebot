@@ -1,6 +1,6 @@
 """
 RAG Engine — Retrieval-Augmented Generation для KnowledgeBot.
-ChromaDB для хранения эмбеддингов + DeepSeek API для генерации ответов.
+ChromaDB для хранения эмбеддингов + DeepSeek/Groq API для генерации ответов.
 """
 
 import os
@@ -15,7 +15,7 @@ from PyPDF2 import PdfReader
 
 
 class RAGEngine:
-    """RAG engine с ChromaDB + DeepSeek."""
+    """RAG engine с ChromaDB + DeepSeek/Groq."""
 
     def __init__(self):
         # ChromaDB — persistent storage
@@ -29,13 +29,23 @@ class RAGEngine:
             metadata={"hnsw:space": "cosine"}
         )
 
-        # DeepSeek API (совместим с OpenAI SDK)
-        api_key = os.getenv("DEEPSEEK_API_KEY", "")
-        self.llm = OpenAI(
-            api_key=api_key,
+        # DeepSeek API (primary)
+        self.deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
+        self.deepseek_client = OpenAI(
+            api_key=self.deepseek_key,
             base_url="https://api.deepseek.com"
-        )
-        self.model = os.getenv("LLM_MODEL", "deepseek-chat")
+        ) if self.deepseek_key else None
+
+        # Groq API (free fallback)
+        self.groq_key = os.getenv("GROQ_API_KEY", "")
+        self.groq_client = OpenAI(
+            api_key=self.groq_key,
+            base_url="https://api.groq.com/openai/v1"
+        ) if self.groq_key else None
+
+        # Models
+        self.deepseek_model = os.getenv("LLM_MODEL", "deepseek-chat")
+        self.groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
         # System prompt
         self.system_prompt = os.getenv(
@@ -119,26 +129,51 @@ class RAGEngine:
 
         context = "\n\n".join(context_parts)
 
-        # Сгенерировать ответ через DeepSeek
-        response = self.llm.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": self.system_prompt},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Контекст из документов:\n\n{context}\n\n"
-                        f"---\nВопрос: {question}\n\n"
-                        "Ответь на основе приведённого контекста. "
-                        "Если контекста недостаточно — скажи об этом."
-                    )
-                }
-            ],
-            temperature=0.3,
-            max_tokens=1500
-        )
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Контекст из документов:\n\n{context}\n\n"
+                    f"---\nВопрос: {question}\n\n"
+                    "Ответь на основе приведённого контекста. "
+                    "Если контекста недостаточно — скажи об этом."
+                )
+            }
+        ]
 
-        answer = response.choices[0].message.content
+        # Пробуем DeepSeek, потом Groq
+        answer = None
+
+        if self.deepseek_client:
+            try:
+                response = self.deepseek_client.chat.completions.create(
+                    model=self.deepseek_model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=1500
+                )
+                answer = response.choices[0].message.content
+            except Exception as e:
+                print(f"⚠️ DeepSeek failed: {e}. Trying Groq...")
+
+        if not answer and self.groq_client:
+            try:
+                response = self.groq_client.chat.completions.create(
+                    model=self.groq_model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=1500
+                )
+                answer = response.choices[0].message.content
+            except Exception as e:
+                print(f"⚠️ Groq failed: {e}")
+
+        if not answer:
+            answer = (
+                "❌ Не удалось получить ответ. "
+                "Проверьте API ключи DeepSeek или Groq."
+            )
 
         return {
             "answer": answer,
